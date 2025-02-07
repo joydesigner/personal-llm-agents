@@ -5,72 +5,114 @@ from langchain.chains.summarize import load_summarize_chain
 from langchain_openai import OpenAI
 import networkx as nx
 import os
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from requests import Session
+import matplotlib.pyplot as plt
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-# 调试信息：检查 OPENAI_API_KEY 是否被正确加载
+# Debug information: Check if the OPENAI_API_KEY is loaded correctly.
 api_key = os.getenv("OPENAI_API_KEY")
 if api_key is None:
-    print("OPENAI_API_KEY 未从 .env 文件中加载，请检查 .env 文件。")
+    print("OPENAI_API_KEY was not loaded from the.env file. Please check the.env file.")
 else:
-    print("OPENAI_API_KEY 已成功加载。")
+    print("OPENAI_API_KEY has been successfully loaded。")
 
-# 设置 OpenAI API 密钥
+# Set up the OpenAI API key
 os.environ["OPENAI_API_KEY"] = api_key
-# 设置 USER_AGENT 环境变量
-os.environ["USER_AGENT"] = "siliconflow"
+# Set the USER_AGENT environment variable
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
 
-# 步骤 1: 定义从网页加载数据的函数
+# Create a `requests` session with custom request headers
+session = Session()
+session.headers.update({"User-Agent": user_agent})
+
+# Step 1: Define a function to load data from a web page
 def load_data_from_web(urls):
-    loaders = [WebBaseLoader(url) for url in urls]
+    loaders = [WebBaseLoader(url, session=session) for url in urls]
     documents = []
     for loader in loaders:
-        docs = loader.load()
-        documents.extend(docs)
+        try:
+            docs = loader.load()
+            documents.extend(docs)
+        except Exception as e:
+            print(f"Error loading data from {loader.url}: {e}")
     return documents
 
-# 步骤 2: 定义文本分割函数
+# Step 2: Define a text splitting function
 def split_text(documents):
     text_splitter = CharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     return texts
 
-# 步骤 3: 定义生成摘要的函数
+# Step 3: Define a function to generate summaries
 def generate_summary(texts):
     llm = OpenAI(temperature=0.7, base_url="https://api.siliconflow.cn/v1", model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
     chain = load_summarize_chain(llm, chain_type="map_reduce")
-    summary = chain.invoke({"input_documents": texts})
-    return summary["output_text"]
+    try:  # 捕获异常并打印错误信息
+        summary = chain.invoke({"input_documents": texts})
+        return summary["output_text"]
+    except Exception as e:
+        print(f"Error generating summary: {e.__class__.__name__}: {str(e)}")
+        return None
 
-# 步骤 4: 使用 LangGraph 构建信息整合流程
+# Step 4: Use LangGraph to build an information integration process
 def information_integration(urls):
-    # 创建 networkx 图
+    # Create a NetworkX graph
     G = nx.DiGraph()
 
-    # 定义节点
+    # Define nodes
     G.add_node("load_data")
     G.add_node("split_text")
     G.add_node("generate_summary")
 
-    # 定义边（节点之间的依赖关系）
+    # Define edges (dependency relationships between nodes)
     G.add_edge("load_data", "split_text")
     G.add_edge("split_text", "generate_summary")
 
-    # 执行图对应的操作
+    # Drawing
+    pos = nx.spring_layout(G)
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=1500, font_size=10, font_weight='bold', edge_color='gray')
+    plt.title("Information Integration Process")
+    plt.show()
+
+    # Execute the operations corresponding to the graph
     documents = load_data_from_web(urls)
     split_docs = split_text(documents)
     summary = generate_summary(split_docs)
 
     return summary
 
-# 示例使用
-urls = [
-    "https://daybreak.hashnode.dev/machine-learning-supervised-learning-2",
-    "https://daybreak.hashnode.dev/machine-learning-supervised-learning-1"
-]
+# get lobste.rs top 10 news
+def get_hacker_news_urls():
+    base_url = "https://lobste.rs/"
+    headers = {"User-Agent": user_agent}
+    response = requests.get(base_url, headers=headers)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    links = soup.select('.story_liner a')[:10]
+    urls = []
+    for link in links:
+        href = link['href']
+        full_url = urljoin(base_url, href)
+        urls.append(full_url)
+    return urls
 
-# 替换为实际的网页 URL
+
+# Replace with the actual web page URL
 if __name__ == "__main__":
-    final_summary = information_integration(urls)
-    print(final_summary)
+    hacker_news_urls = get_hacker_news_urls()
+    for index, url in enumerate(hacker_news_urls, start=1):
+        print(f"Processing news {index}: {url}")
+        try:
+            summary = information_integration([url])
+            if summary:
+                print(f"Summary of news {index}:")
+                print(summary)
+            else:
+                print(f"Failed to generate summary for news {index}")
+        except Exception as e:
+            print(f"Error processing news {index} from {url}: {e.__class__.__name__}: {str(e)}")
+        print("-" * 80)
