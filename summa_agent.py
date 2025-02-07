@@ -32,7 +32,7 @@ def load_data_from_web(urls):
 
 # 步骤 2: 定义文本分割函数
 def split_text(documents):
-    text_splitter = CharacterTextSplitter(chunk_size=2048, chunk_overlap=100)
+    text_splitter = CharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
     return texts
 

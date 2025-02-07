@@ -1,3 +1,5 @@
-langchain
-openai
-networkx
+langchain==0.3.17
+langchain_community==0.3.16
+langchain_openai==0.3.4
+networkx==3.3
+python-dotenv==1.0.1
